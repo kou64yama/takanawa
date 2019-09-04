@@ -31,6 +31,7 @@ LDFLAGS		:= $(LDFLAGS) -s
 endif
 
 GO.build	:= GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -tags '$(TAGS)' -ldflags '$(LDFLAGS) -extldflags "$(EXTLDFLAGS)"'
+GO.test		:= go test -v --cover
 
 .PHONY: default
 default: build
@@ -38,6 +39,10 @@ default: build
 .PHONY: build
 build:
 	$(GO.build) -o $(TARGET) ./cmd/$(NAME)
+
+.PHONY: test
+test:
+	$(GO.test) ./...
 
 .PHONY: clean
 clean:
