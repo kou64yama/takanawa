@@ -24,8 +24,8 @@ jobs:
       - run:
           name: Run unit tests
           command: |
-            trap "go-junit-report < ${TEST_RESULT}/go-test.out > ${TEST_RESULT}/go-test-report.xml" EXIT
-            make test | tee ${TEST_RESULT}/go-test.out
+            trap "go-junit-report < ${TEST_RESULTS}/go-test.out > ${TEST_RESULTS}/go-test-report.xml" EXIT
+            make test | tee ${TEST_RESULTS}/go-test.out
 
       - run: make
 
