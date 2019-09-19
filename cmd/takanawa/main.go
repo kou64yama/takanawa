@@ -13,69 +13,12 @@ import (
 	"github.com/kou64yama/takanawa/internal/env"
 )
 
-var (
-	version  = "0.0.0"
+const (
 	synopsis = "takanawa [options] <upstream>"
+)
 
-	f = func() *flag.FlagSet {
-		f := flag.NewFlagSet("takanawa", flag.ContinueOnError)
-		f.Usage = func() {
-			o := f.Output()
-			fmt.Fprintf(o, "Usage: %s\n", synopsis)
-			fmt.Fprintln(o, "")
-			fmt.Fprintln(o, "Options:")
-			f.PrintDefaults()
-		}
-		return f
-	}()
-
-	port = f.Uint(
-		"port",
-		env.UintEnv("PORT", 5000),
-		"specify the port",
-	)
-
-	host = f.String(
-		"host",
-		env.StringEnv("HOST", "127.0.0.1"),
-		"specify the host address",
-	)
-
-	overwriteHost = f.Bool(
-		"overwrite-host",
-		env.BoolEnv("OVERWRITE_HOST", true),
-		"overwrite Host header",
-	)
-
-	corsEnabled = f.Bool(
-		"cors",
-		env.BoolEnv("CORS_ENABLED", false),
-		"enable CORS",
-	)
-
-	corsAllowOrigin = f.String(
-		"cors-allow-origin",
-		env.StringEnv("CORS_ALLOW_ORIGIN", "*"),
-		"specify Access-Control-Allow-Origin",
-	)
-
-	corsAllowMethods = f.String(
-		"cors-allow-methods",
-		env.StringEnv("CORS_ALLOW_METHODS", "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS,TRACE"),
-		"specify Access-Control-Allow-Methods",
-	)
-
-	corsAllowHeaders = f.String(
-		"cors-allow-headers",
-		env.StringEnv("CORS_ALLOW_HEADERS", "Content-Type,Content-Length,Accept,Accept-Encoding"),
-		"specify Access-Control-Allow-Headers",
-	)
-
-	corsExposeHeaders = f.String(
-		"cors-expose-headers",
-		env.StringEnv("CORS_EXPOSE_HEADERS", "Content-Type,Content-Length,Content-Encoding"),
-		"specify Access-Control-Expose-Headers",
-	)
+var (
+	version = "0.0.0"
 )
 
 func main() {
@@ -90,6 +33,61 @@ func main() {
 }
 
 func run(args ...string) error {
+	f := flag.NewFlagSet("takanawa", flag.ContinueOnError)
+	f.Usage = func() {
+		o := f.Output()
+		fmt.Fprintf(o, "Usage: %s\n", synopsis)
+		fmt.Fprintln(o, "")
+		fmt.Fprintln(o, "Options:")
+		f.PrintDefaults()
+	}
+
+	port := f.Uint(
+		"port",
+		env.UintEnv("PORT", 5000),
+		"specify the port",
+	)
+	host := f.String(
+		"host",
+		env.StringEnv("HOST", "127.0.0.1"),
+		"specify the host address",
+	)
+	overwriteHost := f.Bool(
+		"overwrite-host",
+		env.BoolEnv("OVERWRITE_HOST", true),
+		"overwrite Host header",
+	)
+	forwarded := f.Bool(
+		"forwarded",
+		env.BoolEnv("FORWARDED", true),
+		"Add the Forwarded request header",
+	)
+	corsEnabled := f.Bool(
+		"cors",
+		env.BoolEnv("CORS_ENABLED", false),
+		"enable CORS",
+	)
+	corsAllowOrigin := f.String(
+		"cors-allow-origin",
+		env.StringEnv("CORS_ALLOW_ORIGIN", "*"),
+		"specify Access-Control-Allow-Origin",
+	)
+	corsAllowMethods := f.String(
+		"cors-allow-methods",
+		env.StringEnv("CORS_ALLOW_METHODS", "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS,TRACE"),
+		"specify Access-Control-Allow-Methods",
+	)
+	corsAllowHeaders := f.String(
+		"cors-allow-headers",
+		env.StringEnv("CORS_ALLOW_HEADERS", "Content-Type,Content-Length,Accept,Accept-Encoding"),
+		"specify Access-Control-Allow-Headers",
+	)
+	corsExposeHeaders := f.String(
+		"cors-expose-headers",
+		env.StringEnv("CORS_EXPOSE_HEADERS", "Content-Type,Content-Length,Content-Encoding"),
+		"specify Access-Control-Expose-Headers",
+	)
+
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -105,6 +103,9 @@ func run(args ...string) error {
 
 	middlewares := []takanawa.Middleware{
 		takanawa.RequestID(),
+	}
+	if *forwarded {
+		middlewares = append(middlewares, takanawa.ForwardedMiddleware())
 	}
 	if *corsEnabled {
 		cors := &takanawa.Cors{

@@ -6,4 +6,5 @@ const (
 	HeaderAccessControlAllowMethods  = "Access-Control-Allow-Methods"
 	HeaderAccessControlAllowHeaders  = "Access-Control-Allow-Headers"
 	HeaderAccessControlExposeHeaders = "Access-Control-Expose-Headers"
+	HeaderForwarded                  = "Forwarded"
 )
