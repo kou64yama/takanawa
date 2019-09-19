@@ -3,6 +3,8 @@ package takanawa_test
 import (
 	"fmt"
 	"net/http"
+	"net/textproto"
+	"net/url"
 	"testing"
 
 	"github.com/kou64yama/takanawa"
@@ -10,12 +12,32 @@ import (
 	"github.com/kou64yama/takanawa/internal/mock"
 )
 
-func TestUpstream(t *testing.T) {
+func TestComposeMiddlewares(t *testing.T) {
+	tests := [][]*mock.MiddlewareMock{
+		{},
+		{mock.NewMiddlewareMock()},
+		{mock.NewMiddlewareMock(), mock.NewMiddlewareMock()},
+		{mock.NewMiddlewareMock(), mock.NewMiddlewareMock(), mock.NewMiddlewareMock()},
+	}
 
-}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d middleware(s)", len(tt)), func(t *testing.T) {
+			middlewares := make([]takanawa.Middleware, len(tt))
+			for i, m := range tt {
+				middlewares[i] = m.Mock()
+			}
+			composed := takanawa.ComposeMiddlewares(middlewares...)
 
-func TestProxy(t *testing.T) {
+			w := mock.NewResponseWriterMock()
+			r := &http.Request{}
+			composed.ServeHTTP(w.Mock(), r)
 
+			ass := assert.NewAssertions(t)
+			for _, m := range tt {
+				ass.AssertEquals(m.HandleCalledN, 1)
+			}
+		})
+	}
 }
 
 func TestRequestID(t *testing.T) {
@@ -48,6 +70,46 @@ func TestRequestID(t *testing.T) {
 			if len(tt) > 0 {
 				ass.AssertEquals(reqID, tt)
 			}
+		})
+	}
+}
+
+func TestForwardedMiddleware(t *testing.T) {
+	tests := []struct {
+		remoteAddr    string
+		host          string
+		url           string
+		forwarded     string
+		nextForwarded string
+	}{
+		{
+			remoteAddr:    "127.0.0.1",
+			host:          "localhost",
+			url:           "/foo/bar",
+			forwarded:     "for=\"_gazonk\"",
+			nextForwarded: "for=_gazonk, for=127.0.0.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%v", tt), func(t *testing.T) {
+			u, _ := url.Parse(tt.url)
+
+			m := takanawa.ForwardedMiddleware()
+
+			r := &http.Request{
+				RemoteAddr: tt.remoteAddr,
+				Host:       tt.host,
+				URL:        u,
+				Header: http.Header{
+					textproto.CanonicalMIMEHeaderKey(takanawa.HeaderForwarded): []string{tt.forwarded},
+				},
+			}
+			next := mock.NewNextMock()
+			m.Handle(nil, r, next.Mock())
+
+			ass := assert.NewAssertions(t)
+			ass.AssertEquals(next.CalledN, 1)
 		})
 	}
 }
@@ -89,34 +151,6 @@ func TestCorsMiddleware(t *testing.T) {
 			ass.AssertEquals(w.Header.Get(takanawa.HeaderAccessControlAllowMethods), tt.allowMethods)
 			ass.AssertEquals(w.Header.Get(takanawa.HeaderAccessControlAllowHeaders), tt.allowHeaders)
 			ass.AssertEquals(w.Header.Get(takanawa.HeaderAccessControlExposeHeaders), tt.exposeHeaders)
-		})
-	}
-}
-
-func TestComposeMiddlewares(t *testing.T) {
-	tests := [][]*mock.MiddlewareMock{
-		{},
-		{mock.NewMiddlewareMock()},
-		{mock.NewMiddlewareMock(), mock.NewMiddlewareMock()},
-		{mock.NewMiddlewareMock(), mock.NewMiddlewareMock(), mock.NewMiddlewareMock()},
-	}
-
-	for _, tt := range tests {
-		t.Run(fmt.Sprintf("%d middleware(s)", len(tt)), func(t *testing.T) {
-			middlewares := make([]takanawa.Middleware, len(tt))
-			for i, m := range tt {
-				middlewares[i] = m.Mock()
-			}
-			composed := takanawa.ComposeMiddlewares(middlewares...)
-
-			w := mock.NewResponseWriterMock()
-			r := &http.Request{}
-			composed.ServeHTTP(w.Mock(), r)
-
-			ass := assert.NewAssertions(t)
-			for _, m := range tt {
-				ass.AssertEquals(m.HandleCalledN, 1)
-			}
 		})
 	}
 }
