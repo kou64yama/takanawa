@@ -7,3 +7,7 @@
 ```shell
 $ takanawa https://golang.org
 ```
+
+## Requirements
+
+- Go 1.11+

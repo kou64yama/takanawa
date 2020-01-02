@@ -1,16 +1,14 @@
 FROM golang:1.12 AS build
 
-COPY . /go/src/github.com/kou64yama/takanawa
-WORKDIR /go/src/github.com/kou64yama/takanawa
+COPY . /app
+WORKDIR /app
 
-RUN go get -u github.com/golang/dep/cmd/dep \
-  && dep ensure \
-  && make
+RUN make
 
 FROM scratch
 
 COPY --from=build \
-  /go/src/github.com/kou64yama/takanawa/build/takanawa \
+  /app/build/takanawa \
   /usr/local/bin/takanawa
 
 EXPOSE 5000
