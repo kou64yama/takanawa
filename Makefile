@@ -5,8 +5,8 @@ GOOS		:= $(shell go env GOOS)
 GOARCH		:= $(shell go env GOARCH)
 
 TARGET		:= build/$(NAME)
-LDFLAGS		:= -w
-EXTLDFLAGS	:= -X main.version=$(VERSION)
+LDFLAGS		:= -w -X main.version=$(VERSION)
+EXTLDFLAGS	:=
 TAGS		:=
 
 ifeq ($(GOOS),windows)
@@ -31,7 +31,7 @@ LDFLAGS		:= $(LDFLAGS) -s
 endif
 
 GO.build	:= GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -tags '$(TAGS)' -ldflags '$(LDFLAGS) -extldflags "$(EXTLDFLAGS)"'
-GO.test		:= go test -v --cover
+GO.test		:= go test -v -cover -coverprofile=coverage.out -covermode=atomic
 
 .PHONY: default
 default: build

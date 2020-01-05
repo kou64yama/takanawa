@@ -2,125 +2,49 @@ package takanawa
 
 import (
 	"net/http"
-	"net/http/httputil"
-	"net/textproto"
-	"net/url"
-	"strings"
-
-	"github.com/google/uuid"
 )
 
-type NextFunc func()
+const (
+	HeaderTakanawaRequestID             = "X-Takanawa-Request-Id"
+	HeaderAccessControlAllowOrigin      = "Access-Control-Allow-Origin"
+	HeaderAccessControlAllowMethods     = "Access-Control-Allow-Methods"
+	HeaderAccessControlAllowHeaders     = "Access-Control-Allow-Headers"
+	HeaderAccessControlExposeHeaders    = "Access-Control-Expose-Headers"
+	HeaderAccessControlAllowCredentials = "Access-Control-Allow-Credentials"
+)
 
-type MiddlewareFunc func(http.ResponseWriter, *http.Request, NextFunc)
+var (
+	ContextTakanawaRequestID ContextKey
+)
 
-type Middleware interface {
-	Handle(http.ResponseWriter, *http.Request, NextFunc)
-}
+type ContextKey string
 
-type middleware struct {
-	handle MiddlewareFunc
-}
+// Middleware returns a function. That receives http.Handler and
+// returns http.Handler.
+type Middleware func(http.Handler) http.Handler
 
-func Handle(handle MiddlewareFunc) Middleware {
-	return &middleware{handle: handle}
-}
-
-func (m *middleware) Handle(w http.ResponseWriter, r *http.Request, next NextFunc) {
-	m.handle(w, r, next)
-}
-
-type composer struct {
-	serveHTTP http.HandlerFunc
-}
-
-func (c *composer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c.serveHTTP(w, r)
-}
-
-func ComposeMiddlewares(middlewares ...Middleware) http.Handler {
-	length := len(middlewares)
-	if length == 0 {
-		return &composer{
-			serveHTTP: func(w http.ResponseWriter, r *http.Request) {},
-		}
+// ComposeMiddleware returns a composite Middleware.
+func ComposeMiddleware(head Middleware, tail ...Middleware) Middleware {
+	if len(tail) == 0 {
+		return head
 	}
 
-	head := middlewares[0]
-	tail := middlewares[1:len(middlewares)]
-	c := ComposeMiddlewares(tail...)
-
-	return &composer{
-		serveHTTP: func(w http.ResponseWriter, r *http.Request) {
-			head.Handle(w, r, func() {
-				c.ServeHTTP(w, r)
-			})
-		},
+	return func(handler http.Handler) http.Handler {
+		return head(ComposeMiddleware(tail[0], tail[1:]...)(handler))
 	}
 }
 
-func ProxyMiddleware(target *url.URL, overwriteHost bool) Middleware {
-	p := httputil.NewSingleHostReverseProxy(target)
-	return Handle(func(w http.ResponseWriter, r *http.Request, _ NextFunc) {
-		if overwriteHost {
-			r.Host = target.Host
-		}
-		p.ServeHTTP(w, r)
-	})
+type Takanawa struct {
+	middleware []Middleware
 }
 
-func RequestID() Middleware {
-	return Handle(func(w http.ResponseWriter, r *http.Request, next NextFunc) {
-		id := r.Header.Get(HeaderTakanawaRequestID)
-		if len(id) == 0 {
-			u, _ := uuid.NewRandom()
-			id = u.String()
-			r.Header.Set(HeaderTakanawaRequestID, id)
-		}
-		w.Header().Set(HeaderTakanawaRequestID, id)
-
-		next()
-	})
+func (t *Takanawa) Middleware(mid ...Middleware) {
+	t.middleware = append(t.middleware, mid...)
 }
 
-func ForwardedMiddleware() Middleware {
-	return Handle(func(w http.ResponseWriter, r *http.Request, next NextFunc) {
-		var all []Forwarded
-		for _, v := range r.Header[textproto.CanonicalMIMEHeaderKey(HeaderForwarded)] {
-			f, _ := ParseForwarded(v)
-			all = append(all, f...)
-		}
-
-		s := strings.SplitN(r.RemoteAddr, ":", 2)
-		fwd := Forwarded{}
-		fwd.For = s[0]
-		// fwd.Host = r.Host
-		// fwd.Proto = r.URL.Scheme
-
-		all = append(all, fwd)
-		l := make([]string, len(all))
-		for i, v := range all {
-			l[i] = v.String()
-		}
-		r.Header.Set(HeaderForwarded, strings.Join(l, ", "))
-
-		next()
-	})
-}
-
-type Cors struct {
-	AllowOrigin   string
-	AllowMethods  []string
-	AllowHeaders  []string
-	ExposeHeaders []string
-}
-
-func CorsMiddleware(cors *Cors) Middleware {
-	return Handle(func(w http.ResponseWriter, r *http.Request, next NextFunc) {
-		w.Header().Set(HeaderAccessControlAllowOrigin, cors.AllowOrigin)
-		w.Header().Set(HeaderAccessControlAllowMethods, strings.Join(cors.AllowMethods, ", "))
-		w.Header().Set(HeaderAccessControlAllowHeaders, strings.Join(cors.AllowHeaders, ", "))
-		w.Header().Set(HeaderAccessControlExposeHeaders, strings.Join(cors.ExposeHeaders, ", "))
-		next()
-	})
+func (t *Takanawa) Handler() http.Handler {
+	if len(t.middleware) == 0 {
+		return http.NotFoundHandler()
+	}
+	return ComposeMiddleware(t.middleware[0], t.middleware[1:]...)(http.NotFoundHandler())
 }
