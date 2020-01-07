@@ -7,8 +7,9 @@ import (
 	"github.com/kou64yama/takanawa"
 )
 
+// CorsOption is options of Cors.
 type CorsOption struct {
-	takanawa.Middleware
+	takanawa.MiddlewareFunc
 	AllowedOrigins   []string
 	AllowedMethods   []string
 	AllowedHeaders   []string
@@ -16,11 +17,12 @@ type CorsOption struct {
 	AllowCredentials bool
 }
 
+// Cors returns the middleware.
 func Cors(opt *CorsOption) takanawa.Middleware {
 	if opt == nil {
 		opt = &CorsOption{}
 	}
-	return func(next http.Handler) http.Handler {
+	return takanawa.MiddlewareFunc(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := w.Header()
 			for _, v := range opt.AllowedOrigins {
@@ -44,5 +46,5 @@ func Cors(opt *CorsOption) takanawa.Middleware {
 
 			next.ServeHTTP(w, r)
 		})
-	}
+	})
 }

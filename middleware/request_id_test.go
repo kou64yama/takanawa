@@ -21,7 +21,7 @@ func TestRequestID(t *testing.T) {
 		r := &http.Request{
 			Header: reqHeader,
 		}
-		middleware.RequestID()(&mock.Handler{}).ServeHTTP(w, r)
+		middleware.RequestID().Apply(&mock.Handler{}).ServeHTTP(w, r)
 
 		id := resHeader.Get(takanawa.HeaderTakanawaRequestID)
 		if len(id) == 0 {
@@ -40,7 +40,7 @@ func TestRequestID(t *testing.T) {
 		r := &http.Request{
 			Header: reqHeader,
 		}
-		middleware.RequestID()(&mock.Handler{}).ServeHTTP(w, r)
+		middleware.RequestID().Apply(&mock.Handler{}).ServeHTTP(w, r)
 
 		id := resHeader.Get(takanawa.HeaderTakanawaRequestID)
 		if id != "e0968622-a057-46e1-95bd-49380695b639" {

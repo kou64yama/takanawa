@@ -5,13 +5,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
+	"syscall"
 
 	"github.com/kou64yama/takanawa"
 	"github.com/kou64yama/takanawa/internal/util"
@@ -19,148 +21,94 @@ import (
 )
 
 const (
-	usage = `Usage: takanawa [options] [path:]upstream [[path:]upstream ...]
+	usageText = `
+	Usage: %s [OPTIONS]
 
-Takanawa is a reverse proxy for HTTP services for development.
+	Takanawa is a reverse proxy for HTTP services for development.
 
-For example, execute the following command to proxy / to UI server and
-/api to the API server:
+	For example, execute the following command to proxy / to UI server and
+	/api to the API server:
 
-  $ takanawa /api:http://localhost:8080/v1 http://localhost:3000
-
-Takanawa runs on port 5000 by default.
-
-Options:`
+	  $ takanawa -access-log=common \
+	      http://localhost:3000 -change-origin \
+	      http://localhost:8080/v1 -change-origin -path=/api
+	`
 )
 
 var (
 	version = "0.0.0"
-	logger  = log.New(os.Stdout, "", 0)
+)
 
-	showVersion          bool
-	host                 string
-	port                 uint
-	accessLog            string
-	overwriteHost        bool
-	corsAllowedOrigins   string
-	corsAllowedMethods   string
-	corsAllowedHeaders   string
-	corsExposedHeaders   string
-	corsAllowCredentials bool
+var (
+	errExitUsage = errors.New("exit usage")
 )
 
 func main() {
-	args, err := flags(os.Args[1:]...)
-	if err != nil {
-		os.Exit(exit(err))
-		return
+	err := run(os.Args[1:]...)
+	if err == errExitUsage {
+		os.Exit(2)
 	}
-
-	err = run(args...)
 	if err != nil {
-		logger.Println(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	code := exit(err)
-	os.Exit(code)
 }
 
-func exit(err error) int {
-	if err == flag.ErrHelp {
-		return 2
-	}
-	if err != nil {
-		return 1
-	}
-	return 0
-}
-
-func flags(args ...string) ([]string, error) {
-	f := flag.NewFlagSet("takanawa", flag.ContinueOnError)
-	f.Usage = func() {
+func usage(f *flag.FlagSet, u string) func() {
+	return func() {
+		u = strings.ReplaceAll(u, "\n\t", "\n")
+		u = strings.TrimSpace(u)
 		o := f.Output()
-		fmt.Fprintln(o, usage)
+		fmt.Printf(u, f.Name())
+		fmt.Fprintln(o, "\n\nOptions:")
 		f.PrintDefaults()
 	}
-	f.BoolVar(
+}
+
+func run(args ...string) error {
+	logger := log.New(os.Stdout, "", 0)
+
+	var (
+		showVersion bool
+		listenAddr  string
+		port        uint
+		accessLog   string
+	)
+	globalFlags := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	globalFlags.Usage = usage(globalFlags, usageText)
+	globalFlags.BoolVar(
 		&showVersion,
 		"version",
 		false,
 		"show version number",
 	)
-	f.StringVar(
-		&host,
-		"host",
+	globalFlags.StringVar(
+		&listenAddr,
+		"listen-address",
 		util.DefaultHost(),
-		"specify listening host address",
+		"specify listening address",
 	)
-	f.UintVar(
+	globalFlags.UintVar(
 		&port,
 		"port",
 		util.DefaultPort(),
 		"specify listening port number",
 	)
-	f.StringVar(
+	globalFlags.StringVar(
 		&accessLog,
 		"access-log",
 		"",
 		"show access log (common|combined)",
 	)
-	f.BoolVar(
-		&overwriteHost,
-		"overwrite-host",
-		true,
-		"overwrite the 'Host' request header",
-	)
-	f.StringVar(
-		&corsAllowedOrigins,
-		"cors-allowed-origins",
-		"",
-		"specify allowed origins for CORS",
-	)
-	f.StringVar(
-		&corsAllowedMethods,
-		"cors-allowed-methods",
-		"",
-		"specify allowed methods for CORS",
-	)
-	f.StringVar(
-		&corsAllowedHeaders,
-		"cors-allowed-headers",
-		"",
-		"specify allowed headers for CORS",
-	)
-	f.StringVar(
-		&corsExposedHeaders,
-		"cors-exposed-headers",
-		"",
-		"specify exposed headers for CORS",
-	)
-	f.BoolVar(
-		&corsAllowCredentials,
-		"cors-allow-credentials",
-		false,
-		"allow credentials for CORS",
-	)
-	if err := f.Parse(args); err != nil {
-		return nil, err
+	if err := globalFlags.Parse(args); err != nil {
+		return errExitUsage
 	}
-	if f.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "no upstream arguments")
-		f.Usage()
-		return nil, errors.New("no upstream arguments")
-	}
-	return f.Args(), nil
-}
-
-func run(args ...string) error {
 	if showVersion {
-		fmt.Println("takanawa", version)
+		fmt.Printf("Takanawa %s\n", version)
 		return nil
 	}
 
-	t := &takanawa.Takanawa{}
-	t.Middleware(middleware.RequestID())
-
+	globalMids := []takanawa.Middleware{middleware.RequestID()}
 	if len(accessLog) > 0 {
 		var format middleware.AccessLogFormat
 		switch accessLog {
@@ -171,59 +119,122 @@ func run(args ...string) error {
 		default:
 			return fmt.Errorf("invalid access log format: %s", accessLog)
 		}
-		opt := &middleware.AccessLogOption{
-			Log:    logger,
+		opt := &middleware.AccessLogOptions{
+			Logger: logger,
 			Format: format,
 		}
-		t.Middleware(middleware.AccessLog(opt))
+		globalMids = append(globalMids, middleware.AccessLog(opt))
 	}
 
-	allowedOrigins := util.SplitAndTrimSpace(corsAllowedOrigins, ",")
-	if len(allowedOrigins) > 0 {
-		opt := &middleware.CorsOption{}
-		opt.AllowedOrigins = allowedOrigins
-		opt.AllowedMethods = util.SplitAndTrimSpace(corsAllowedMethods, ",")
-		opt.AllowedHeaders = util.SplitAndTrimSpace(corsAllowedHeaders, ",")
-		opt.ExposedHeaders = util.SplitAndTrimSpace(corsExposedHeaders, ",")
-		opt.AllowCredentials = corsAllowCredentials
-		t.Middleware(middleware.Cors(opt))
-	}
+	mu := http.NewServeMux()
+	srv := &http.Server{Handler: takanawa.ComposeMiddleware(globalMids...).Apply(mu)}
 
-	for _, v := range args {
-		u, opt, err := middleware.ParseReverseProxyOption(v)
+	args = globalFlags.Args()
+	for len(args) > 0 {
+		var (
+			upstream             = args[0]
+			path                 string
+			changeOrigin         bool
+			corsAllowedOrigins   string
+			corsAllowedMethods   string
+			corsAllowedHeaders   string
+			corsExposedHeaders   string
+			corsAllowCredentials bool
+		)
+		proxyFlags := flag.NewFlagSet(os.Args[0]+" UPSTREAM", flag.ContinueOnError)
+		proxyFlags.Usage = usage(proxyFlags, usageText)
+		proxyFlags.StringVar(
+			&path,
+			"path",
+			"/",
+			"specify path to proxy",
+		)
+		proxyFlags.BoolVar(
+			&changeOrigin,
+			"change-origin",
+			false,
+			"overwrite the 'Host' request header",
+		)
+		proxyFlags.StringVar(
+			&corsAllowedOrigins,
+			"cors-allowed-origins",
+			"",
+			"specify allowed origins for CORS",
+		)
+		proxyFlags.StringVar(
+			&corsAllowedMethods,
+			"cors-allowed-methods",
+			"",
+			"specify allowed methods for CORS",
+		)
+		proxyFlags.StringVar(
+			&corsAllowedHeaders,
+			"cors-allowed-headers",
+			"",
+			"specify allowed headers for CORS",
+		)
+		proxyFlags.StringVar(
+			&corsExposedHeaders,
+			"cors-exposed-headers",
+			"",
+			"specify exposed headers for CORS",
+		)
+		proxyFlags.BoolVar(
+			&corsAllowCredentials,
+			"cors-allow-credentials",
+			false,
+			"allow credentials for CORS",
+		)
+		if err := proxyFlags.Parse(args[1:]); err != nil {
+			return errExitUsage
+		}
+		u, err := url.Parse(upstream)
 		if err != nil {
 			return err
 		}
 
-		opt.OverwriteHost = overwriteHost
-		opt.ErrorLog = log.New(ioutil.Discard, "", 0)
-		t.Middleware(middleware.ReverseProxy(u, opt))
-		logger.Printf("Proxy: %q -> %s", opt.Path, u)
+		mids := []takanawa.Middleware{}
+		if changeOrigin {
+			mids = append(mids, middleware.ChangeOrigin(u.Host))
+		}
+		if allowedOrigins := util.SplitAndTrimSpace(corsAllowedOrigins, ","); len(allowedOrigins) > 0 {
+			opt := &middleware.CorsOption{}
+			opt.AllowedOrigins = allowedOrigins
+			opt.AllowedMethods = util.SplitAndTrimSpace(corsAllowedMethods, ",")
+			opt.AllowedHeaders = util.SplitAndTrimSpace(corsAllowedHeaders, ",")
+			opt.ExposedHeaders = util.SplitAndTrimSpace(corsExposedHeaders, ",")
+			opt.AllowCredentials = corsAllowCredentials
+			mids = append(mids, middleware.Cors(opt))
+		}
+		mids = append(mids, middleware.StripPrefix(path), middleware.ReverseProxy(u))
+		mu.Handle(path, takanawa.ComposeMiddleware(mids...).Apply(http.NotFoundHandler()))
+
+		args = proxyFlags.Args()
 	}
 
-	addr := host + ":" + strconv.Itoa(int(port))
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
+	logger.Printf("Takanawa %s", version)
+	logger.Printf("PID %d", os.Getpid())
 
-	srv := &http.Server{Handler: t.Handler()}
 	idleConnsClosed := make(chan struct{})
 	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
-		<-sigint
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+		logger.Printf("Shutdown: %s", <-sig)
 
-		// We received an interrupt signal, shut down.
+		// We received an SIGHUP, SIGINT, SIGQUIT or SIGTERM signal, shut down.
 		if err := srv.Shutdown(context.Background()); err != nil {
 			// Error from closing listeners, or context timeout:
 			logger.Printf("HTTP server Shutdown: %v", err)
 		}
 		close(idleConnsClosed)
 	}()
+	ln, err := net.Listen("tcp", listenAddr+":"+strconv.Itoa(int(port)))
+	if err != nil {
+		return err
+	}
 
-	logger.Printf("The server is running at http://%s", ln.Addr().String())
-	if err := srv.Serve(ln); err != nil {
+	logger.Printf("Listen on %s", ln.Addr().String())
+	if err := srv.Serve(ln); err != http.ErrServerClosed {
 		return err
 	}
 

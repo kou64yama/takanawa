@@ -8,8 +8,9 @@ import (
 	"github.com/kou64yama/takanawa"
 )
 
+// RequestID returns the middleware.
 func RequestID() takanawa.Middleware {
-	return func(next http.Handler) http.Handler {
+	return takanawa.MiddlewareFunc(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := r.Header.Get(takanawa.HeaderTakanawaRequestID)
 			if len(id) == 0 {
@@ -23,5 +24,5 @@ func RequestID() takanawa.Middleware {
 			ctx = context.WithValue(ctx, takanawa.ContextTakanawaRequestID, id)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
-	}
+	})
 }

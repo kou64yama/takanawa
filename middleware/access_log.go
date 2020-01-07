@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -13,6 +13,10 @@ import (
 )
 
 var (
+	// CommonLogFormat formats access logs according to the
+	// Apache's Common Log Format.
+	//
+	// Common Log Format: https://httpd.apache.org/docs/2.4/en/logs.html#common
 	CommonLogFormat = func(t *time.Time, w *util.ResponseSniffer, r *http.Request) string {
 		remoteAddr := strings.SplitN(r.RemoteAddr, ":", 2)
 		return fmt.Sprintf(
@@ -26,6 +30,11 @@ var (
 			w.Length,
 		)
 	}
+
+	// CombinedLogFormat formats access logs according to the
+	// Apache's Combined Log Format.
+	//
+	// Combined Log Format: https://httpd.apache.org/docs/2.4/en/logs.html#combined
 	CombinedLogFormat = func(t *time.Time, w *util.ResponseSniffer, r *http.Request) string {
 		referer := r.Referer()
 		if len(referer) == 0 {
@@ -39,32 +48,43 @@ var (
 	}
 )
 
+var (
+	// DefaultAccessLogOptions is used by AccessLog as default options.
+	DefaultAccessLogOptions = AccessLogOptions{
+		Logger: log.New(ioutil.Discard, "", 0),
+		Format: CommonLogFormat,
+	}
+)
+
+// AccessLogFormat formats access logs.
 type AccessLogFormat func(t *time.Time, s *util.ResponseSniffer, r *http.Request) string
 
-type AccessLogOption struct {
-	Log    *log.Logger
+// AccessLogOptions is options of AccessLog.
+type AccessLogOptions struct {
+	Logger *log.Logger
 	Format AccessLogFormat
 }
 
-func AccessLog(opt *AccessLogOption) takanawa.Middleware {
+// AccessLog returns the middleware.
+func AccessLog(opt *AccessLogOptions) takanawa.Middleware {
 	if opt == nil {
-		opt = &AccessLogOption{}
+		opt = &DefaultAccessLogOptions
 	}
-	logger := opt.Log
+	logger := opt.Logger
 	if logger == nil {
-		logger = log.New(os.Stdout, "", 0)
+		logger = DefaultAccessLogOptions.Logger
 	}
 	format := opt.Format
 	if format == nil {
-		format = CommonLogFormat
+		format = DefaultAccessLogOptions.Format
 	}
 
-	return func(next http.Handler) http.Handler {
+	return takanawa.MiddlewareFunc(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t := time.Now().Local()
 			s := &util.ResponseSniffer{Writer: w, StatusCode: 200}
 			next.ServeHTTP(s, r)
 			logger.Println(format(&t, s, r))
 		})
-	}
+	})
 }
