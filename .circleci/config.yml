@@ -1,8 +1,12 @@
-version: 2
+version: 2.1
+
+orbs:
+  codecov: codecov/codecov@1.0.5
+
 jobs:
   build:
     docker:
-      - image: circleci/golang:1.12
+      - image: circleci/golang:1.13
 
     environment:
       TEST_RESULTS: /tmp/test-results
@@ -35,3 +39,9 @@ jobs:
 
       - store_test_results:
           path: /tmp/test-results
+
+      - run:
+          name: codecov
+          command: |
+            mv coverage.out coverage.txt
+            bash <(curl -s https://codecov.io/bash)

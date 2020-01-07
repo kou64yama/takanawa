@@ -2,47 +2,35 @@ package mock
 
 import "net/http"
 
-type responseWriter struct {
-	header      func() http.Header
-	writeHeader func(int)
-	write       func([]byte) (int, error)
+type ResponseWriter struct {
+	http.ResponseWriter
+	MockHeader        func() http.Header
+	CalledHeader      [][]interface{}
+	MockWrite         func([]byte) (int, error)
+	CalledWrite       [][]interface{}
+	MockWriteHeader   func(statusCode int)
+	CalledWriteHeader [][]interface{}
 }
 
-func (w *responseWriter) Header() http.Header {
-	return w.header()
-}
-
-func (w *responseWriter) WriteHeader(statusCode int) {
-	w.writeHeader(statusCode)
-}
-
-func (w *responseWriter) Write(b []byte) (int, error) {
-	return w.write(b)
-}
-
-type ResponseWriterMock struct {
-	StatusCode int
-	Header     http.Header
-	Body       []byte
-}
-
-func NewResponseWriterMock() *ResponseWriterMock {
-	return &ResponseWriterMock{
-		Header: http.Header{},
+func (w *ResponseWriter) Header() http.Header {
+	w.CalledHeader = append(w.CalledHeader, []interface{}{})
+	if w.MockHeader != nil {
+		return w.MockHeader()
 	}
+	return nil
 }
 
-func (mock *ResponseWriterMock) Mock() http.ResponseWriter {
-	return &responseWriter{
-		header: func() http.Header {
-			return mock.Header
-		},
-		writeHeader: func(statusCode int) {
-			mock.StatusCode = statusCode
-		},
-		write: func(b []byte) (int, error) {
-			mock.Body = append(mock.Body, b...)
-			return len(b), nil
-		},
+func (w *ResponseWriter) Write(b []byte) (int, error) {
+	w.CalledWrite = append(w.CalledWrite, []interface{}{b})
+	if w.MockWrite != nil {
+		return w.MockWrite(b)
+	}
+	return 0, nil
+}
+
+func (w *ResponseWriter) WriteHeader(statusCode int) {
+	w.CalledWriteHeader = append(w.CalledWriteHeader, []interface{}{statusCode})
+	if w.MockWriteHeader != nil {
+		w.MockWriteHeader(statusCode)
 	}
 }
