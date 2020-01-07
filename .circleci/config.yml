@@ -40,5 +40,8 @@ jobs:
       - store_test_results:
           path: /tmp/test-results
 
-      - codecov/upload:
-          file: ./coverage.out
+      - run:
+          name: codecov
+          command: |
+            mv coverage.out coverage.txt
+            bash <(curl -s https://codecov.io/bash)
