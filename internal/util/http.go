@@ -1,11 +1,10 @@
 package util
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
 )
 
+// The ResponseSniffer sniff http.ResponseWriter methods.
 type ResponseSniffer struct {
 	http.ResponseWriter
 	Writer     http.ResponseWriter
@@ -13,6 +12,7 @@ type ResponseSniffer struct {
 	Length     uint64
 }
 
+// Header calls w.Writer.Header()
 func (w *ResponseSniffer) Header() http.Header {
 	return w.Writer.Header()
 }
@@ -23,24 +23,8 @@ func (w *ResponseSniffer) Write(b []byte) (int, error) {
 	return size, err
 }
 
+// WriteHeader calls w.Writer.WriteHeader(statusCode) and saves statusCode.
 func (w *ResponseSniffer) WriteHeader(statusCode int) {
 	w.Writer.WriteHeader(statusCode)
 	w.StatusCode = statusCode
-}
-
-func FormatRequest(req *http.Request) string {
-	s := fmt.Sprintln(req.Method, req.RequestURI, req.Proto)
-	s += fmt.Sprintln("Host:", req.Host)
-	for n, v := range req.Header {
-		s += fmt.Sprintf("%s: %s\n", n, strings.Join(v, "; "))
-	}
-	return s
-}
-
-func FormatResponse(resp *http.Response) string {
-	s := fmt.Sprintln(resp.Proto, resp.StatusCode)
-	for n, v := range resp.Header {
-		s += fmt.Sprintf("%s: %s\n", n, strings.Join(v, "; "))
-	}
-	return s
 }

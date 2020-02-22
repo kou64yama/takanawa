@@ -6,65 +6,77 @@ import (
 	"testing"
 
 	"github.com/kou64yama/takanawa"
-	"github.com/kou64yama/takanawa/internal/mock"
 )
 
-func TestTakanawa(t *testing.T) {
-	hello := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t.Log("called hello")
-			msg := w.Header().Get("X-Test-Message")
-			if len(msg) == 0 {
-				msg = "hello"
-			} else {
-				msg += ", hello"
-			}
-			w.Header().Set("X-Test-Message", msg)
-			next.ServeHTTP(w, r)
-		})
-	}
-	world := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t.Log("called world")
-			msg := w.Header().Get("X-Test-Message")
-			if len(msg) == 0 {
-				msg = "world"
-			} else {
-				msg += ", world"
-			}
-			w.Header().Set("X-Test-Message", msg)
-			next.ServeHTTP(w, r)
-		})
-	}
+type mockHandler struct {
+	http.Handler
+	MockServeHTTP   func(http.ResponseWriter, *http.Request)
+	ServeHTTPCalled bool
+}
 
+func (m *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.ServeHTTPCalled = true
+	if m.MockServeHTTP != nil {
+		m.MockServeHTTP(w, r)
+	}
+}
+
+type mockMiddleware struct {
+	takanawa.Middleware
+	MockApply   func(http.Handler) http.Handler
+	ApplyCalled bool
+}
+
+func (m *mockMiddleware) Apply(next http.Handler) http.Handler {
+	m.ApplyCalled = true
+	if m.MockApply != nil {
+		return m.MockApply(next)
+	} else {
+		return nil
+	}
+}
+
+func TestComposeMiddleware(t *testing.T) {
 	tests := []struct {
-		middleware []takanawa.Middleware
-		message    string
+		mids []takanawa.Middleware
+		nil  bool
 	}{
-		{middleware: []takanawa.Middleware{hello, world}, message: "hello, world"},
-		{middleware: []takanawa.Middleware{hello}, message: "hello"},
-		{middleware: []takanawa.Middleware{}, message: ""},
+		{mids: nil, nil: true},
+		{
+			mids: []takanawa.Middleware{
+				&mockMiddleware{MockApply: func(next http.Handler) http.Handler { return next }},
+			},
+		},
+		{
+			mids: []takanawa.Middleware{
+				&mockMiddleware{MockApply: func(next http.Handler) http.Handler { return next }},
+				&mockMiddleware{MockApply: func(next http.Handler) http.Handler { return next }},
+			},
+		},
 	}
-
 	for _, tt := range tests {
-		n := fmt.Sprintf("%d middleware(s)", len(tt.middleware))
-		t.Run(n, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d mids", len(tt.mids)), func(t *testing.T) {
 			t.Helper()
 
-			header := http.Header{}
-			w := &mock.ResponseWriter{
-				MockHeader: func() http.Header { return header },
-				MockWrite:  func(b []byte) (int, error) { return len(b), nil },
+			composed := takanawa.ComposeMiddleware(tt.mids...)
+			if tt.nil && composed != nil {
+				t.Errorf("got %v, want nil", composed)
 			}
-			r := &http.Request{}
+			if tt.nil {
+				return
+			}
 
-			ta := &takanawa.Takanawa{}
-			ta.Middleware(tt.middleware...)
-			ta.Handler().ServeHTTP(w, r)
-
-			msg := header.Get("X-Test-Message")
-			if msg != tt.message {
-				t.Errorf("got %q, want %q", msg, tt.message)
+			var w struct{ http.ResponseWriter }
+			var r *http.Request
+			handler := &mockHandler{}
+			composed.Apply(handler).ServeHTTP(w, r)
+			if !handler.ServeHTTPCalled {
+				t.Errorf("ServeHTTPCalled: got false, want true")
+			}
+			for i, mid := range tt.mids {
+				if !mid.(*mockMiddleware).ApplyCalled {
+					t.Errorf("[%d].ApplyCalled: got false, want true", i)
+				}
 			}
 		})
 	}

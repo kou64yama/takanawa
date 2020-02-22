@@ -1,16 +1,15 @@
 NAME		:= takanawa
 VERSION		:= 0.0.0
+OUTPUT		:= bin
 
 GOOS		:= $(shell go env GOOS)
 GOARCH		:= $(shell go env GOARCH)
 
-TARGET		:= build/$(NAME)
 LDFLAGS		:= -w -X main.version=$(VERSION)
 EXTLDFLAGS	:=
 TAGS		:=
 
 ifeq ($(GOOS),windows)
-TARGET		:= $(TARGET).exe
 LDFLAGS		:= $(LDFLAGS) -H=windowsgui
 EXTLDFLAGS	:= $(EXTLDFLAGS) -static
 endif
@@ -37,8 +36,8 @@ GO.test		:= go test -v -cover -coverprofile=coverage.out -covermode=atomic
 default: build
 
 .PHONY: build
-build:
-	$(GO.build) -o $(TARGET) ./cmd/$(NAME)
+build: $(OUTPUT)
+	$(GO.build) -o $(OUTPUT) ./...
 
 .PHONY: test
 test:
@@ -46,4 +45,7 @@ test:
 
 .PHONY: clean
 clean:
-	$(RM) $(TARGET)
+	$(RM) $(wildcard $(OUTPUT)/*)
+
+$(OUTPUT):
+	mkdir -p $@

@@ -1,9 +1,11 @@
+// Package takanawa is the HTTP/HTTPS reverse proxy utilities.
 package takanawa
 
 import (
 	"net/http"
 )
 
+// HTTP headers.
 const (
 	HeaderTakanawaRequestID             = "X-Takanawa-Request-Id"
 	HeaderAccessControlAllowOrigin      = "Access-Control-Allow-Origin"
@@ -13,38 +15,38 @@ const (
 	HeaderAccessControlAllowCredentials = "Access-Control-Allow-Credentials"
 )
 
+// Context keys.
 var (
 	ContextTakanawaRequestID ContextKey
 )
 
+// The ContextKey is the type of context key.
 type ContextKey string
 
-// Middleware returns a function. That receives http.Handler and
-// returns http.Handler.
-type Middleware func(http.Handler) http.Handler
-
-// ComposeMiddleware returns a composite Middleware.
-func ComposeMiddleware(head Middleware, tail ...Middleware) Middleware {
-	if len(tail) == 0 {
-		return head
-	}
-
-	return func(handler http.Handler) http.Handler {
-		return head(ComposeMiddleware(tail[0], tail[1:]...)(handler))
-	}
+// A Middleware transforms http.Handler.
+type Middleware interface {
+	Apply(http.Handler) http.Handler
 }
 
-type Takanawa struct {
-	middleware []Middleware
+// The MiddlewareFunc type is an adapter to allow the use of ordinary
+// functions as takanawa middleware.
+type MiddlewareFunc func(http.Handler) http.Handler
+
+// Apply calls f(next)
+func (f MiddlewareFunc) Apply(next http.Handler) http.Handler {
+	return f(next)
 }
 
-func (t *Takanawa) Middleware(mid ...Middleware) {
-	t.middleware = append(t.middleware, mid...)
-}
-
-func (t *Takanawa) Handler() http.Handler {
-	if len(t.middleware) == 0 {
-		return http.NotFoundHandler()
+// ComposeMiddleware composes mids.
+func ComposeMiddleware(mids ...Middleware) Middleware {
+	switch len(mids) {
+	case 0:
+		return nil
+	case 1:
+		return mids[0]
+	default:
+		return MiddlewareFunc(func(handler http.Handler) http.Handler {
+			return mids[0].Apply(ComposeMiddleware(mids[1:]...).Apply(handler))
+		})
 	}
-	return ComposeMiddleware(t.middleware[0], t.middleware[1:]...)(http.NotFoundHandler())
 }

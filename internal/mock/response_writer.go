@@ -2,6 +2,7 @@ package mock
 
 import "net/http"
 
+// The ResponseWriter is the mock of http.ResponseWriter
 type ResponseWriter struct {
 	http.ResponseWriter
 	MockHeader        func() http.Header
@@ -12,6 +13,7 @@ type ResponseWriter struct {
 	CalledWriteHeader [][]interface{}
 }
 
+// Header calls MockHeader.
 func (w *ResponseWriter) Header() http.Header {
 	w.CalledHeader = append(w.CalledHeader, []interface{}{})
 	if w.MockHeader != nil {
@@ -28,6 +30,7 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 	return 0, nil
 }
 
+// WriteHeader calls MockWriteHeader.
 func (w *ResponseWriter) WriteHeader(statusCode int) {
 	w.CalledWriteHeader = append(w.CalledWriteHeader, []interface{}{statusCode})
 	if w.MockWriteHeader != nil {

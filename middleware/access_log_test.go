@@ -1,10 +1,10 @@
 package middleware_test
 
 import (
-	"io/ioutil"
+	"bytes"
+	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -131,59 +131,38 @@ func TestCombinedLogFormat(t *testing.T) {
 }
 
 func TestAccessLog(t *testing.T) {
-	tests := []struct {
-		name   string
-		option func(f *os.File) *middleware.AccessLogOption
-	}{
-		{
-			name: "nil",
-			option: func(f *os.File) *middleware.AccessLogOption {
-				return nil
-			},
-		},
-		{
-			name: "no log, no format",
-			option: func(f *os.File) *middleware.AccessLogOption {
-				return &middleware.AccessLogOption{}
-			},
-		},
-		{
-			name: "no format",
-			option: func(f *os.File) *middleware.AccessLogOption {
-				return &middleware.AccessLogOption{Log: log.New(f, "", 0)}
-			},
-		},
-		{
-			name: "no log",
-			option: func(f *os.File) *middleware.AccessLogOption {
-				return &middleware.AccessLogOption{Format: middleware.CommonLogFormat}
-			},
-		},
+	defaultOpt := middleware.DefaultAccessLogOptions
+	defer func() { middleware.DefaultAccessLogOptions = defaultOpt }()
+
+	buf := bytes.NewBuffer(nil)
+	logger := log.New(buf, "", 0)
+	middleware.DefaultAccessLogOptions.Logger = logger
+	middleware.DefaultAccessLogOptions.Format = func(t *time.Time, s *util.ResponseSniffer, r *http.Request) string {
+		return "!!OUTPUT!!"
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	tests := []*middleware.AccessLogOptions{
+		nil,
+		{
+			Logger: middleware.DefaultAccessLogOptions.Logger,
+		},
+		{
+			Format: middleware.DefaultAccessLogOptions.Format,
+		},
+	}
+	for _, opt := range tests {
+		t.Run(fmt.Sprint(opt), func(t *testing.T) {
 			t.Helper()
 
-			f, err := ioutil.TempFile("", "takanawa-test_")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer os.Remove(f.Name())
-			os.Stdout = f
+			buf.Reset()
 
+			h := &mock.Handler{}
 			w := &mock.ResponseWriter{}
-			r := &http.Request{
-				Method:     "GET",
-				RequestURI: "/",
-				Proto:      "HTTP/1.1",
-			}
-			middleware.AccessLog(tt.option(f))(&mock.Handler{}).ServeHTTP(w, r)
+			r := &http.Request{}
+			middleware.AccessLog(opt).Apply(h).ServeHTTP(w, r)
 
-			f.Seek(0, 0)
-			b, _ := ioutil.ReadAll(f)
-			if len(b) == 0 {
-				t.Error("no output")
+			if string(buf.Bytes()) != "!!OUTPUT!!\n" {
+				t.Errorf("got %q, want %q", string(buf.Bytes()), "!!OUTPUT!!\n")
 			}
 		})
 	}

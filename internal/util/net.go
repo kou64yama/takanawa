@@ -6,9 +6,11 @@ import (
 )
 
 var (
+	// ErrNoIP is returned on FindIP cannot find net.IP.
 	ErrNoIP = errors.New("No IP addess")
 )
 
+// FindIP finds the net.IP in net.InterfaceAddrs().
 func FindIP(p func(net.IP) bool) (net.IP, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {

@@ -98,7 +98,7 @@ func TestCors(t *testing.T) {
 				Host: tt.host,
 			}
 			n := &mock.Handler{}
-			middleware.Cors(tt.option)(n).ServeHTTP(w, r)
+			middleware.Cors(tt.option).Apply(n).ServeHTTP(w, r)
 
 			accessControlAllowOrigin := header.Get(takanawa.HeaderAccessControlAllowOrigin)
 			if accessControlAllowOrigin != tt.accessControlAllowOrigin {
