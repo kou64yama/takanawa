@@ -1,6 +1,7 @@
 # 高輪 − Takanawa
 
 [![CircleCI](https://circleci.com/gh/kou64yama/takanawa.svg?style=svg)](https://circleci.com/gh/kou64yama/takanawa)
+[![GitHub Actions](https://github.com/kou64yama/takanawa/workflows/Go/badge.svg?branch=master)](https://github.com/kou64yama/takanawa/actions?query=workflow%3AGo+branch%3Amaster)
 [![codecov](https://codecov.io/gh/kou64yama/takanawa/branch/master/graph/badge.svg)](https://codecov.io/gh/kou64yama/takanawa)
 
 Takanawa is a reverse proxy for HTTP services for development.
